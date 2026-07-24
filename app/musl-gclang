@@ -1,0 +1,11 @@
+#!/bin/bash
+_HERE=$(realpath "${BASH_SOURCE[0]%/*}")
+exec clang-18 \
+  -fPIC -flto=full \
+  --ld-path=${_HERE}/musl-glld \
+  -B${_HERE} \
+  -static-libgcc \
+  -nostdinc \
+  --sysroot=${_HERE} \
+  -isystem ${_HERE}/include \
+  "$@"

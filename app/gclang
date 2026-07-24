@@ -1,0 +1,6 @@
+#!/bin/bash
+_HERE=$(realpath "${BASH_SOURCE[0]%/*}")
+exec clang-18 \
+  -fPIC -flto=full \
+  --ld-path=${_HERE}/glld \
+  "$@"

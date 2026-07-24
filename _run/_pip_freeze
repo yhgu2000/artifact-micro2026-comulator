@@ -1,0 +1,4 @@
+click==8.1.6
+filelock==3.18.0
+ipython==8.20.0
+matplotlib==3.6.3

@@ -1,0 +1,19 @@
+# 项目基本架构
+/_logging
+/_running
+/data
+/env.*
+/testing
+/tmp
+
+# Python
+**/__pycache__
+**/.mypy_cache
+/venv
+
+# VS Code
+# .vscode/
+build/
+
+# 当前项目
+!.clang-format

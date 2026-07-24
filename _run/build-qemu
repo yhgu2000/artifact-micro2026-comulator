@@ -1,0 +1,64 @@
+#!/bin/env python3
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__) + "/.." * 1)
+from _run import __run__
+
+ROOT, HERE, LOGGER, PROGRESS = __run__(__spec__, __file__)
+PROGRESS.push_PrintTree()
+
+
+# ==================================================================================== #
+import asyncio as aio
+import click
+import shutil
+
+from _run import runps_async, PROJECT_DIR
+
+
+@click.command()
+@click.option("--debug", is_flag=True, default=False, help="use debug version")
+@click.option("--clean", is_flag=True, default=False, help="clean everything first")
+def cli(debug: bool, clean: bool) -> None:
+    """build qemu using `ninja`"""
+
+    async def ado():
+        build_qemu_dir = HERE.running_dir / "qemu"
+        build_qemu_dir.mkdir(parents=True, exist_ok=True)
+        if clean:
+            with PROGRESS["cleaning"]:
+                shutil.rmtree(build_qemu_dir, True)
+        build_qemu_dir.mkdir(parents=True, exist_ok=True)
+
+        ninja_path = shutil.which("ninja")
+        assert ninja_path, "command `ninja` not found"
+
+        await runps_async(
+            PROJECT_DIR / "qemu/configure",
+            "--disable-system",
+            # "--enable-linux-user",
+            "--target-list=x86_64-linux-user,aarch64-linux-user,riscv64-linux-user",
+            "--extra-ldflags=-rdynamic",
+            "--disable-werror",
+            *(["--enable-debug", "--enable-debug-tcg"] if debug else []),
+            cwd=str(build_qemu_dir),
+            check=0,
+        )
+
+        await runps_async(ninja_path, cwd=build_qemu_dir, check=0)
+
+        PROGRESS(f"==> {HERE.running("qemu-x86_64")}")
+        PROGRESS(f"==> {HERE.running("qemu-aarch64")}")
+        PROGRESS(f"==> {HERE.running("qemu-riscv64")}")
+
+    aio.run(ado())
+
+
+try:
+    if cli.main(standalone_mode=False) != 0:
+        PROGRESS.pop()
+        sys.exit()
+except click.ClickException as e:
+    e.show()
+ROOT.logging(rm=True)

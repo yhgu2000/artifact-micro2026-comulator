@@ -1,0 +1,96 @@
+#!/bin/env python3
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__) + "/.." * 1)
+from _run import __run__
+
+ROOT, HERE, LOGGER, PROGRESS = __run__(__spec__, __file__)
+PROGRESS.push_PrintTree()
+
+
+# ==================================================================================== #
+import asyncio as aio
+import click
+import shutil
+
+from _run import runps, Path
+from environ import ENVIRON
+
+
+@click.command()
+@click.option("--clean", is_flag=True, default=False, help="清理构建目录")
+def cli(clean: bool) -> None:
+    """构建项目"""
+
+    app_dir = HERE.running_dir / "app"
+    if clean:
+        with PROGRESS["cleaning"]:
+            shutil.rmtree(app_dir, True)
+            shutil.rmtree(ENVIRON.cmake_build_dir, True)
+    app_dir.mkdir(parents=True, exist_ok=True)
+
+    if not ENVIRON.cmake_build_dir.exists():
+        ENVIRON.cmake_build_dir.mkdir(parents=True, exist_ok=True)
+        runps(
+            ENVIRON.EXE.cmake,
+            HERE.project_dir,
+            *("-G", "Ninja"),
+            *("-B", ENVIRON.cmake_build_dir),
+            "-DCMAKE_BUILD_TYPE=" + ENVIRON.cmake_build_type,
+            env={"CC": ENVIRON.EXE.clang, "CXX": ENVIRON.EXE.clangpp},
+            check=0,
+        )
+    runps(
+        ENVIRON.EXE.cmake,
+        "--build",
+        ENVIRON.cmake_build_dir,
+        check=0,
+    )
+
+    build_app_dir = ENVIRON.cmake_build_dir / "app"
+    for tool_name in [
+        "analyze",
+        "chop-off",
+        "config",
+        "funcnum",
+        "globhash",
+        "inspect",
+        "lto-plugin.so",
+        "outline",
+        "pick-up",
+        "take-out",
+    ]:
+        (app_dir / tool_name).unlink(missing_ok=True)
+        (app_dir / tool_name).symlink_to(build_app_dir / tool_name)
+
+    source_app_dir = HERE.project_dir / "app"
+    for tool_name in [
+        "gclang",
+        "gclang++",
+        "glld",
+        "hqlibs",
+    ]:
+        (app_dir / tool_name).unlink(missing_ok=True)
+        (app_dir / tool_name).symlink_to(source_app_dir / tool_name)
+
+    build_guest_rt_a_dir = HERE.running(md=True)
+    shutil.rmtree(build_guest_rt_a_dir, ignore_errors=True)
+    guest_rt_a = aio.run(
+        ENVIRON.local_guest_rt.build(
+            build_guest_rt_a_dir, Path(ENVIRON.EXE.clang), Path(ENVIRON.EXE.ar)
+        )
+    )
+    (app_dir / "guest_rt.a").unlink(missing_ok=True)
+    (app_dir / "guest_rt.a").symlink_to(guest_rt_a)
+
+    PROGRESS(f"==> {app_dir}")
+
+
+try:
+    if cli.main(standalone_mode=False) != 0:
+        PROGRESS.pop()
+        sys.exit()
+except click.ClickException as e:
+    e.show()
+ROOT.logging(rm=True)

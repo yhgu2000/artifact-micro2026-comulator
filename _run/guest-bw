@@ -1,0 +1,90 @@
+#!/bin/env python3
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__) + "/.." * 1)
+from _run import Path, __run__
+
+ROOT, HERE, LOGGER, PROGRESS = __run__(__spec__, __file__)
+PROGRESS.push_PrintTree()
+
+
+# ==================================================================================== #
+import asyncio as aio
+import shutil
+
+import click
+
+from environ import ENVIRON
+from lib.guest_bw import TARGET
+
+RUNNER = aio.Runner()
+GCLANG: Path
+
+
+@click.group()
+@click.option(
+    "--gclang",
+    type=click.Path(exists=True, dir_okay=False),
+    default=HERE.running_dir / "app/gclang",
+)
+def cli(gclang: Path):
+    """guest_bw 构建工具"""
+
+    global GCLANG
+
+    GCLANG = gclang
+
+
+@cli.command()
+@click.argument("variants", nargs=-1)
+def build(variants: list[str]):
+    """构建指定变体的 guest_bw, 默认构建所有变体"""
+
+    global GCLANG
+
+    wf = ENVIRON.CASES.workflow
+    if not variants:
+        variants = list(wf.variants.keys())
+
+    (HERE.running_dir / "guest_bw").mkdir(parents=True, exist_ok=True)
+    for name in variants:
+        var = wf.variants[name]
+        build_dir = HERE.running(var.name)
+        shutil.rmtree(build_dir, ignore_errors=True)
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        dir = RUNNER.run(TARGET.build(build_dir, GCLANG, var))
+        dist_dir = HERE.running_dir / "guest_bw" / var.name
+        shutil.rmtree(dist_dir, ignore_errors=True)
+        dir.rename(dist_dir)
+        PROGRESS(f"==> {dist_dir}")
+
+
+@cli.command()
+@click.argument("variant")
+def debug(variant: str):
+    """调试指定变体的构建过程"""
+
+    global GCLANG
+
+    build_dir = HERE.running(variant)
+    print(TARGET.debug(build_dir, GCLANG))
+
+
+@cli.command(name="list")
+def list_():
+    """列出所有变体"""
+
+    for name in ENVIRON.CASES.workflow.variants.keys():
+        print(name)
+
+
+# ==================================================================================== #
+try:
+    if cli.main(standalone_mode=False) != 0:
+        PROGRESS.pop()
+        sys.exit()
+except click.ClickException as e:
+    e.show()
+ROOT.logging(rm=True)

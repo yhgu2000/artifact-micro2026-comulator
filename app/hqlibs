@@ -1,0 +1,84 @@
+#!/bin/env python3
+import argparse
+import os
+import shlex
+import shutil
+import subprocess as subp
+from pathlib import Path
+
+argp = argparse.ArgumentParser(description="build Qlibs on host")
+argp.add_argument("gyhcall_config_dir", nargs="?")
+argp.add_argument("--clang", action="store_true", help="use clang path")
+argp.add_argument("--debug", action="store_true", help="build debug version")
+argp.add_argument("--with-ir", action="store_true", help="also output IR")
+argp.add_argument("--guest_bw", help="with guest_bw dist dir")
+
+ARGS = argp.parse_args()
+if ARGS.gyhcall_config_dir is None:
+    _ = os.environ.get("GYHCALL_CONFIG_DIR")
+    if _ is None:
+        print("[ERROR]: environment 'GYHCALL_CONFIG_DIR' not set")
+        exit(1)
+    config_dir = Path(_)
+else:
+    config_dir = Path(ARGS.gyhcall_config_dir)
+
+clang = ARGS.clang or shutil.which("clang-18")
+if clang is None:
+    print("[ERROR]: clang not found")
+    exit(1)
+
+host_dir = config_dir / "host"
+host_dir.mkdir(parents=True, exist_ok=True)
+
+if ARGS.guest_bw:
+    dist_dir = Path(ARGS.guest_bw)
+
+    names = [i.name for i in dist_dir.glob("*")]
+    names.remove("guest_bw.so")
+    host_ir = dist_dir / names[0]
+
+    guest_bw = host_dir / f"{host_ir.stem}.qso"
+    cmd = [
+        clang,
+        *("-fPIC", "-shared", "-O3"),
+        *("-o", str(guest_bw)),
+        str(host_ir),
+    ]
+    print(shlex.join(cmd))
+    subp.run(cmd, check=True)
+    print("==>", guest_bw)
+
+guest_dir = config_dir / "guest"
+if not guest_dir.exists():
+    print(f"[WARNING]: guest dir not found: {guest_dir}")
+    exit()
+
+for qlibUid in guest_dir.iterdir():
+    if (host_ir := qlibUid / "host.bc").exists():
+        pass
+    elif (host_ir := qlibUid / "host.ll").exists():
+        pass
+    else:
+        print(f"[WARNING]: no host IR (.bc/.ll) found in: {qlibUid}")
+        continue
+    host_qso = host_dir / f"{qlibUid.name}.qso"
+    dbg_opts = ["-g", "-Og"] if ARGS.debug else ["-O2"]
+
+    cmd = [clang, *dbg_opts, "-fPIC", "-shared", "-o", str(host_qso), str(host_ir)]
+    print(shlex.join(cmd))
+    subp.run(cmd, check=True)
+    print("==>", host_qso)
+
+    if ARGS.with_ir:
+        with_ir = host_dir / f"{qlibUid.name}.ll"
+        cmd = [
+            clang,
+            *dbg_opts,
+            *("-fPIC", "-S", "-emit-llvm"),
+            *("-o", str(with_ir)),
+            str(host_ir),
+        ]
+        print(shlex.join(cmd))
+        subp.run(cmd, check=True)
+        print("==>", with_ir)

@@ -1,0 +1,6 @@
+#!/bin/bash
+_HERE=$(realpath "${BASH_SOURCE[0]%/*}")
+exec ld.lld-18 \
+  --load-pass-plugin=${_HERE}/lto-plugin.so \
+  "$@" \
+  ${_HERE}/guest_rt.a
